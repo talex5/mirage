@@ -15,7 +15,7 @@
  *)
 
 type r
-type num = int32
+type num = int
 type perm = RO | RW
 
 val alloc: ?page:Istring.Raw.t -> num -> r

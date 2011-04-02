@@ -18,7 +18,7 @@ open Lwt
 
 exception Grant_page_not_found
 
-type num = int32                      (* Grant ref type (grant_ref_t) *)
+type num = int                        (* Grant ref type  *)
 
 type r = {
   num: num;                           (* Grant ref number *)
@@ -32,8 +32,8 @@ module Raw = struct
   external nr_reserved : unit -> int = "caml_gnttab_reserved"
   external init : unit -> unit = "caml_gnttab_init"
   external fini : unit -> unit = "caml_gnttab_fini"
-  external grant_access : num -> Istring.Raw.t -> int -> bool -> unit = "caml_gnttab_grant_access"
-  external end_access : num -> unit = "caml_gnttab_end_access"
+  external grant_access : num -> Istring.Raw.t -> int -> bool -> unit = "caml_gnttab_grant_access" "noalloc"
+  external end_access : num -> unit = "caml_gnttab_end_access" "noalloc"
 end
 
 let alloc ?page (num:num) =
@@ -66,7 +66,7 @@ let rec get_free_entry () =
   | false ->
     return (Queue.pop free_list)
 
-let to_string (r:r) = Int32.to_string r.num
+let to_string (r:r) = string_of_int r.num
 
 let grant_access ~domid ~perm r =
   let page = page r in
@@ -127,6 +127,6 @@ let with_grants ~domid ~perm num fn =
 let _ =
     Printf.printf "gnttab_init: %d\n%!" (Raw.nr_entries () - 1);
     for i = Raw.nr_reserved () to Raw.nr_entries () - 1 do
-        put_free_entry (alloc (Int32.of_int i));
+        put_free_entry (alloc i);
     done;
     Raw.init ()
