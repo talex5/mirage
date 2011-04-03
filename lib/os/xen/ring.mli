@@ -15,27 +15,26 @@
  *)
 
 module type RING = sig
+  type idx = int
   type req
   type res
   type fring
 
   val alloc : int -> (Gnttab.r * fring) Lwt.t
+  val req_idx : fring -> int
   val pending_responses : fring -> int
   val free_requests : fring -> int
   val max_requests : fring -> int
-  val write : fring -> req list -> bool
-  val read : fring -> res list
-  val id_of_res : res -> int
+  val write : fring -> req -> bool
+  val writev : fring -> req list -> bool
+  val readv : fring -> (idx -> res -> unit) -> unit
 end
 
 module Netif : sig
   module Rx : sig
-    module Req : sig
-      type t = {
-       id: int;
-       gref: int32; 
-      } 
-    end
+
+    type req = Gnttab.num
+
     module Res : sig
       type flags = {
         checksum_blank: bool;
@@ -46,20 +45,9 @@ module Netif : sig
       type status = 
         | Size of int
         | Err of int
-      type t = { id : int; off : int; flags : flags; status : status; }
+      type t = { off : int; flags : flags; status : status; }
     end
-  end
 
-  module Rx_t : sig
-    type id = int
-    type t
-    val t : backend_domid:int -> (Gnttab.r * t) Lwt.t
-    val push : t -> evtchn:int -> (id -> Rx.Req.t) list -> Rx.Res.t Lwt.t list Lwt.t
-    val push_one : t -> evtchn:int -> (id -> Rx.Req.t) -> Rx.Res.t Lwt.t
-    val poll : t -> unit
-    val pending_responses : t -> int
-    val max_requests : t -> int
-    val free_requests : t -> int
   end
 
   module Tx : sig
@@ -82,10 +70,9 @@ module Netif : sig
       type flags = int
 
       type normal = {
-        gref: int32;
+        gref: Gnttab.num;
         offset: int;
         flags: flags;
-        id: int;
         size: int;
       }
 
@@ -97,25 +84,20 @@ module Netif : sig
     module Res : sig
       type status =  
        | Dropped | Error | OK | Null
-      type t = { id : int; status: status; }
+      type t = status
     end
   end
 
   module Tx_t : sig
-    type id = int
     type t
     val t : backend_domid:int -> (Gnttab.r * t) Lwt.t
-    val push : t -> evtchn:int -> (id -> Tx.Req.t) list -> Tx.Res.t Lwt.t list Lwt.t
-    val push_one : t -> evtchn:int -> (id -> Tx.Req.t) -> Tx.Res.t Lwt.t
+    val write : t -> evtchn:int -> Tx.Req.t -> Tx.Res.t Lwt.t
     val poll : t -> unit
-    val pending_responses : t -> int
     val max_requests : t -> int
-    val free_requests : t -> int
   end
 end
 
 module Blkif : sig
-  type id = int
   type vdev = int
 
   module Req : sig
@@ -123,7 +105,7 @@ module Blkif : sig
       |Read |Write |Write_barrier |Flush
 
     type seg = {
-      gref: int32;
+      gref: Gnttab.num;
       first_sector: int;
       last_sector: int;
     }
@@ -131,7 +113,6 @@ module Blkif : sig
     type t = {
       op: op;
       handle: vdev;
-      id: int;
       sector: int64;
       segs: seg array;
     }
@@ -142,7 +123,6 @@ module Blkif : sig
       |OK |Error |Not_supported |Unknown of int
 
     type t = {
-      id: int;
       op: Req.op;
       status: status;
     }
@@ -150,15 +130,11 @@ module Blkif : sig
 end  
 
 module Blkif_t : sig
-  type id = int
   type t
   val t : backend_domid:int -> (Gnttab.r * t) Lwt.t
-  val push : t -> evtchn:int -> (id -> Blkif.Req.t) list -> Blkif.Res.t Lwt.t list Lwt.t
-  val push_one : t -> evtchn:int -> (id -> Blkif.Req.t) -> Blkif.Res.t Lwt.t
+  val write : t -> evtchn:int -> Blkif.Req.t -> Blkif.Res.t Lwt.t
   val poll : t -> unit
-  val pending_responses : t -> int
   val max_requests : t -> int
-  val free_requests : t -> int
 end
  
 module Console : sig
