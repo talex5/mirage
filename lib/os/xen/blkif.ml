@@ -339,3 +339,25 @@ let read_512 t sector num_sectors =
     )
 )
 )
+
+let provider_t () =
+  let plug_mvar = Lwt_mvar.create_empty () in
+  let unplug_mvar = Lwt_mvar.create_empty () in
+  let provider = object(self)
+    method id = "Xen.Blkif"
+    method plug = plug_mvar
+    method unplug = unplug_mvar
+    method create ~deps ~cfg id = 
+      lwt blkif = create ~id in
+      let entry = Devices.({
+        provider=self; 
+        id=self#id; 
+        depends=[];
+        node=Blkif blkif }) in
+      return entry
+  end in
+  (* Watch xenstore *)
+  Main.at_enter (fun () ->
+    (* TODO *)
+    return ()
+  )
