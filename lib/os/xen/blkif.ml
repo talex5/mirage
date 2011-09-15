@@ -216,15 +216,6 @@ let unplug id =
 let enumerate () =
   Xs.(t.directory "device/vbd")
 
-let create fn =
-  let th,_ = Lwt.task () in
-  Lwt.on_cancel th (fun _ -> Hashtbl.iter (fun id _ -> unplug id) devices);
-  lwt ids = enumerate () in
-  let pt = Lwt_list.iter_p (fun id ->
-    lwt t = plug id in
-    fn id t) ids in
-  th <?> pt
-
 (* Read a single page from disk. The offset must be sector-aligned *)
 let read_page t offset =
   let sector = Int64.div offset t.sector_size in
@@ -252,7 +243,7 @@ let read_page t offset =
     )
 
 (* Write a single page to disk.
-   Offset is the sector number, which must be sector-aligned
+   Offset is the byte offset, which must be sector-aligned
    Page must be an Io_page *)
 let write_page t offset page =
   let sector = Int64.div offset t.sector_size in
@@ -277,6 +268,16 @@ let write_page t offset page =
         )
     )
 
+let create ~id : Devices.blkif Lwt.t =
+  printf "Xen.Blkif: create %s\n%!" id;
+  lwt t = plug id in
+  return (object 
+    method id = id
+    method read_page offset = read_page t offset
+    method sector_size = Int64.to_int t.features.sector_size
+    method ppname = sprintf "Xen.blkif:%s" id
+    method destroy = unplug t
+  end)
 
 (** Read a number of contiguous sectors off disk.
     This function assumes a 512 byte sector size.
