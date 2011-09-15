@@ -209,8 +209,7 @@ let plug (id:id) =
 (* Unplug shouldn't block, although the Xen one might need to due
    to Xenstore? XXX *)
 let unplug id =
-  Console.log (sprintf "Blkif.unplug %s: not implemented yet" id);
-  ()
+  Console.log (sprintf "Blkif.unplug %s: not implemented yet" id)
 
 (** Return a list of valid VBDs *)
 let enumerate () =
@@ -276,7 +275,7 @@ let create ~id : Devices.blkif Lwt.t =
     method read_page offset = read_page t offset
     method sector_size = Int64.to_int t.features.sector_size
     method ppname = sprintf "Xen.blkif:%s" id
-    method destroy = unplug t
+    method destroy = unplug id
   end)
 
 (** Read a number of contiguous sectors off disk.
