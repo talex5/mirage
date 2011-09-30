@@ -103,7 +103,7 @@ end
 (* Rules for MPL compiler *)
 module MPL = struct
 
-  let mplc_bin = "mplc" 
+  let mplc_bin = "../../../tools/mpl/_build/mplc.native" 
 
   let mpl_c tags arg out =
     Cmd (S [A mplc_bin; A"-q"; T(tags++"mpl"); P arg; Sh">"; Px out])
@@ -114,10 +114,10 @@ module MPL = struct
     mpl_c tags mpl ml
 
   let () =
-    rule "mpl: mpl -> ml"
-      ~prod:"%.ml"
-      ~dep:"%.mpl"
-      (mpl_compile "%.mpl" "%.ml")
+    rule "mpl: %.mpl -> %_mpl.ml"
+      ~prod:"%(file).ml"
+      ~dep:"%(file).mpl"
+      (mpl_compile "%(file).mpl" "%(file).ml")
 end
 
 (* Rules to directly invoke GCC rather than go through OCaml. *)
