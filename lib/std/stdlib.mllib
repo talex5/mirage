@@ -37,6 +37,7 @@ camlinternalMod
 std_exit
 log
 oo
+bigarray
 lwt
 lwt_util
 lwt_stream

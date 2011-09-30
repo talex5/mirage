@@ -11,7 +11,7 @@
 /*                                                                     */
 /***********************************************************************/
 
-/* $Id: bigarray_stubs.c 9153 2008-12-03 18:09:09Z doligez $ */
+/* $Id: bigarray_stubs.c 11037 2011-05-12 14:34:05Z xleroy $ */
 
 #include <stddef.h>
 #include <stdarg.h>
@@ -28,6 +28,9 @@
 #define uint8 caml_ba_uint8
 #define int16 caml_ba_int16
 #define uint16 caml_ba_uint16
+
+extern void caml_ba_unmap_file(void * addr, uintnat len);
+                                          /* from mmap_xxx.c */
 
 /* Compute the number of elements of a big array */
 
@@ -507,7 +510,14 @@ static void caml_ba_finalize(value v)
     }
     break;
   case CAML_BA_MAPPED_FILE:
-    caml_failwith("CAML_BA_MAPPED_FILE: unsupported");
+    if (b->proxy == NULL) {
+      caml_ba_unmap_file(b->data, caml_ba_byte_size(b));
+    } else {
+      if (-- b->proxy->refcount == 0) {
+        caml_ba_unmap_file(b->proxy->data, b->proxy->size);
+        caml_stat_free(b->proxy);
+      }
+    }
     break;
   }
 }
@@ -519,8 +529,13 @@ static int caml_ba_compare(value v1, value v2)
   struct caml_ba_array * b1 = Caml_ba_array_val(v1);
   struct caml_ba_array * b2 = Caml_ba_array_val(v2);
   uintnat n, num_elts;
+  intnat flags1, flags2;
   int i;
 
+  /* Compare kind & layout in case the arguments are of different types */
+  flags1 = b1->flags & (CAML_BA_KIND_MASK | CAML_BA_LAYOUT_MASK);
+  flags2 = b2->flags & (CAML_BA_KIND_MASK | CAML_BA_LAYOUT_MASK);
+  if (flags1 != flags2) return flags2 - flags1;
   /* Compare number of dimensions */
   if (b1->num_dims != b2->num_dims) return b2->num_dims - b1->num_dims;
   /* Same number of dimensions: compare dimensions lexicographically */
