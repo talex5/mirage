@@ -39,10 +39,6 @@ install:
 clean:
 	@cd syntax && $(MAKE) clean
 	@cd lib && $(MAKE) clean
-	@cd tools && $(MAKE) clean
-	@cd regress && $(MAKE) clean
-	@cd docs && $(MAKE) clean
-	@rm -rf _build
 
 install-el:
 	@cd scripts/caml-mode && $(MAKE) install-el

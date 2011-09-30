@@ -34,6 +34,7 @@
 #include <caml/memory.h>
 #include <caml/alloc.h>
 #include <caml/fail.h>
+#include <caml/bigarray.h>
 
 static void
 setnonblock(int fd)
@@ -203,11 +204,11 @@ caml_tcpv4_accept(value v_fd)
 }
 
 CAMLprim value
-caml_socket_read(value v_fd, value v_str, value v_off, value v_len)
+caml_socket_read(value v_fd, value v_buf, value v_off, value v_len)
 {
-  CAMLparam4(v_fd ,v_str, v_off, v_len);
+  CAMLparam4(v_fd ,v_buf, v_off, v_len);
   CAMLlocal2(v_ret, v_err);
-  char *buf = String_val(v_str);
+  char *buf = Caml_ba_data_val(v_buf);
   int r = read(Int_val(v_fd), buf + Int_val(v_off), Int_val(v_len));
   if (r < 0) {
     if (errno == EAGAIN || errno==EWOULDBLOCK)
@@ -222,11 +223,11 @@ caml_socket_read(value v_fd, value v_str, value v_off, value v_len)
 }
 
 CAMLprim value
-caml_socket_write(value v_fd, value v_str, value v_off, value v_len)
+caml_socket_write(value v_fd, value v_buf, value v_off, value v_len)
 {
-  CAMLparam4(v_fd, v_str, v_off, v_len);
+  CAMLparam4(v_fd, v_buf, v_off, v_len);
   CAMLlocal2(v_ret, v_err);
-  char *buf = String_val(v_str);
+  char *buf = Caml_ba_data_val(v_buf);
   int r = write(Int_val(v_fd), buf + Int_val(v_off), Int_val(v_len));
   if (r < 0) {
     if (errno == EAGAIN || errno==EWOULDBLOCK)
@@ -271,11 +272,11 @@ caml_udpv4_bind(value v_ipaddr, value v_port)
 }
 
 CAMLprim value
-caml_udpv4_recvfrom(value v_fd, value v_str, value v_off, value v_len, value v_src)
+caml_udpv4_recvfrom(value v_fd, value v_buf, value v_off, value v_len, value v_src)
 {
-  CAMLparam5(v_fd, v_str, v_off, v_len, v_src);
+  CAMLparam5(v_fd, v_buf, v_off, v_len, v_src);
   CAMLlocal3(v_ret, v_err, v_inf);
-  char *buf = String_val(v_str) + Int_val(v_off);
+  char *buf = Caml_ba_data_val(v_buf) + Int_val(v_off);
   size_t len = Int_val(v_len);
   int fd = Int_val(v_fd);
   struct sockaddr_in sa;
@@ -299,11 +300,11 @@ caml_udpv4_recvfrom(value v_fd, value v_str, value v_off, value v_len, value v_s
 }
 
 CAMLprim value
-caml_udpv4_sendto(value v_fd, value v_str, value v_off, value v_len, value v_dst)
+caml_udpv4_sendto(value v_fd, value v_buf, value v_off, value v_len, value v_dst)
 {
-  CAMLparam5(v_fd, v_str, v_off, v_len, v_dst);
+  CAMLparam5(v_fd, v_buf, v_off, v_len, v_dst);
   CAMLlocal2(v_ret, v_err);
-  char *buf = String_val(v_str) + Int_val(v_off);
+  char *buf = Caml_ba_data_val(v_buf) + Int_val(v_off);
   size_t len = Int_val(v_len);
   int fd = Int_val(v_fd);
   struct sockaddr_in sa;
@@ -588,12 +589,13 @@ caml_domain_read(value v_fd)
 }
 
 CAMLprim value
-caml_domain_write(value v_fd, value v_str)
+caml_domain_write(value v_fd, value v_buf, value v_off, value v_len)
 {
-  CAMLparam2(v_fd, v_str);
+  CAMLparam4(v_fd, v_buf, v_off, v_len);
   CAMLlocal2(v_ret, v_err);
-  int len = caml_string_length(v_str);
-  int r = write(Int_val(v_fd), String_val(v_str), len);
+  int len = Int_val(v_len);
+  /* XXX TODO bounds check */
+  int r = write(Int_val(v_fd), Caml_ba_data_val(v_buf) + Int_val(v_off), len);
   if (r < 0) {
     if (errno == EAGAIN || errno==EWOULDBLOCK)
       Val_WouldBlock(v_ret);

@@ -100,6 +100,26 @@ module OS = struct
 
 end
 
+(* Rules for MPL compiler *)
+module MPL = struct
+
+  let mplc_bin = "mplc" 
+
+  let mpl_c tags arg out =
+    Cmd (S [A mplc_bin; A"-q"; T(tags++"mpl"); P arg; Sh">"; Px out])
+
+  let mpl_compile mpl ml env build =
+    let mpl = env mpl and ml = env ml in
+    let tags = tags_of_pathname mpl in
+    mpl_c tags mpl ml
+
+  let () =
+    rule "mpl: mpl -> ml"
+      ~prod:"%.ml"
+      ~dep:"%.mpl"
+      (mpl_compile "%.mpl" "%.ml")
+end
+
 (* Rules to directly invoke GCC rather than go through OCaml. *)
 module CC = struct
 

@@ -1,0 +1,3 @@
+true: mirage
+<**/*.ml>: warn_y
+"mpl.cmx": for-repack(Net)
