@@ -44,7 +44,10 @@ function assemble_unix {
   for i in libunixrun.a main.o; do
     cp ${ROOT}/lib/_build/unix-$1/os/runtime_unix/$i ${OBJ}/lib/
   done
-  cp ${ROOT}/lib/_build/unix-$1/std/*.{cmi,cmx,cmxa,a,o,cmo} ${OBJ}/lib/
+  cp ${ROOT}/lib/_build/unix-$1/std/*.{cmi,cma,cmx,cmxa,a,o,cmo} ${OBJ}/lib/
+  # install the header files; use ocaml system ones for UNIX
+  mkdir -p ${OBJ}/lib/caml
+  cp $(ocamlc -where)/caml/*.h ${OBJ}/lib/caml
 }
 
 function assemble_node {
