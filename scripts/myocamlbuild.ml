@@ -82,15 +82,16 @@ end
 module Mir = struct
 
   (** Link to a UNIX executable binary *)
-  let cc_unix_link tags arg out env =
+  let cc_unix_link mode tags arg out env =
+    let runlib = match mode with `bc -> "-lcamlrun" |`nc -> "-lasmrun" in
     let ocamlc_libdir = "-L" ^ (Lazy.force stdlib_dir) in
     let open OS in
     let unixrun mode = lib / mode / "lib" / "libunixrun.a" in
     let unixmain mode = lib / mode / "lib" / "main.o" in
     let mode = sprintf "unix-%s" (env "%(mode)") in
     let dl_libs = match host with
-      |Linux  -> [A"-lm"; A"-lasmrun"; A"-lcamlstr"; A"-ldl"]
-      |Darwin -> [A"-lm"; A"-lasmrun"; A"-lcamlstr"] in
+      |Linux  -> [A"-lm"; A runlib; A"-lcamlstr"; A"-ldl"; A"-ltermcap"]
+      |Darwin -> [A"-lm"; A runlib; A"-lcamlstr"; A"-ltermcap"] in
     let tags = tags++"cc"++"c" in
     Cmd (S (A cc :: [ T(tags++"link"); A ocamlc_libdir; A"-o"; Px out; 
              A (unixmain mode); P arg; A (unixrun mode); ] @ dl_libs))
@@ -139,6 +140,16 @@ module Mir = struct
        ocamlopt_link_prog
       (fun tags -> tags++"ocaml"++"link"++"native"++"output_obj") x
 
+  (** Copied from ocaml/ocamlbuild/ocaml_specific.ml and modified to add
+      the output_obj tag *)
+  let bytecode_output_obj x out env build = 
+   Seq [
+    link_gen "cmo" "cma" !Options.ext_lib [!Options.ext_obj; "cmi"]
+       ocamlc_link_prog (fun tags -> tags++"ocaml"++"link"++"byte"++"output_obj") 
+       x out env build ;
+    mv (Pathname.basename (env "%.b.o")) (env "%.b.o")
+    ]
+
   (** Generate all the rules for mir *)
   let rules () =
     (* Copied from ocaml/ocamlbuild/ocaml_specific.ml *)
@@ -146,10 +157,10 @@ module Mir = struct
     let x_o = "%"-.-ext_obj in
 
     (* Generate the source stub that calls OS.Main.run *)
-    rule "exec_ml: %.mir -> %__.ml"
-      ~prod:"%(backend)/%(file)__.ml"
+    rule "exec_ml: %.mir -> %__t.ml"
+      ~prod:"%(backend)/%(file)__t.ml"
       ~dep:"%(backend)/%(file).mir"
-      (ml_main "%(backend)/%(file).mir" "%(backend)/%(file)__.ml");
+      (ml_main "%(backend)/%(file).mir" "%(backend)/%(file)__t.ml");
 
     (* Rule to link a module and output a standalone native object file *)
     rule "ocaml: cmx* & o* -> .m.o"
@@ -157,23 +168,35 @@ module Mir = struct
       ~deps:["%.cmx"; x_o]
       (native_output_obj "%.cmx" "%.m.o");
 
+    (* Rule to link a module and output a standalone bytecode object file *)
+    rule "ocaml: cmo* & o* -> .b.o"
+      ~prod:"%.b.o"
+      ~deps:["%.cmo"]
+      (bytecode_output_obj "%.cmo" "%.b.o");
+
     (* Xen link rule *)
-    rule ("final link: xen/%__.m.o -> xen/%.xen")
+    rule ("final link: xen/%__t.m.o -> xen/%.xen")
       ~prod:"xen/%(file).xen"
-      ~dep:"xen/%(file)__.m.o"
-      (cc_link_c_implem cc_xen_link "xen/%(file)__.m.o" "xen/%(file).xen");
+      ~dep:"xen/%(file)__t.m.o"
+      (cc_link_c_implem cc_xen_link "xen/%(file)__t.m.o" "xen/%(file).xen");
 
     (* UNIX link rule *)
-    rule ("final link: %__.m.o -> %.unix-%(mode).bin")
+    rule ("final link: %__t.m.o -> %.unix-%(mode).bin")
       ~prod:"unix-%(mode)/%(file).bin"
-      ~dep:"unix-%(mode)/%(file)__.m.o"
-      (cc_link_c_implem cc_unix_link "unix-%(mode)/%(file)__.m.o" "unix-%(mode)/%(file).bin");
+      ~dep:"unix-%(mode)/%(file)__t.m.o"
+      (cc_link_c_implem (cc_unix_link `nc) "unix-%(mode)/%(file)__t.m.o" "unix-%(mode)/%(file).bin");
+
+    (* UNIX link rule for bytecode *)
+    rule ("final link: %__t.b.o -> %.unix-%(mode).bcbin")
+      ~prod:"unix-%(mode)/%(file).bcbin"
+      ~dep:"unix-%(mode)/%(file)__t.b.o"
+      (cc_link_c_implem (cc_unix_link `bc) "unix-%(mode)/%(file)__t.b.o" "unix-%(mode)/%(file).bcbin");
 
     (* Node link rule *)
-    rule ("final link: node/%__.byte -> node/%.js")
+    rule ("final link: node/%__t.byte -> node/%.js")
       ~prod:"node/%.js"
-      ~dep:"node/%__.byte"
-      (js_of_ocaml "node/%.js" "node/%__.byte");
+      ~dep:"node/%__t.byte"
+      (js_of_ocaml "node/%.js" "node/%__t.byte");
 
     (* Generate a default %.mir if one doesnt exist *)
     rule "default mir file"
