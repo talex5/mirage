@@ -14,7 +14,7 @@ export PREFIX
 JOBS ?= -j 4
 export JOBS
 
-MIR-DEBUG ?= 1
+MIR-DEBUG ?= 0
 export MIR-DEBUG
 
 all:
