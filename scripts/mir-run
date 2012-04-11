@@ -94,6 +94,7 @@ run_xl_domain() {
 name="$NAME"
 kernel="$BINARY"
 memory=$MEMORY
+superpages=1
 on_crash="preserve"
 EOF
     echo -n "disk=[ " >> $CONF
