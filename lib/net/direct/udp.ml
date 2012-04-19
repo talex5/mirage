@@ -29,7 +29,8 @@ let input t ~src ~dst pkt =
       checksum:16; data:(length-8)*8:bitstring } ->
   if Hashtbl.mem t.listeners dest_port then begin
     let fn = Hashtbl.find t.listeners dest_port in
-    fn ~src ~dst ~source_port data
+    let _ = fn ~src ~dst ~source_port data in
+    return ()
   end else
     return ()
 

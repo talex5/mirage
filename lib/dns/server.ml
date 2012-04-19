@@ -68,7 +68,7 @@ let no_memo mgr src dst bits =
     let q = List.hd d.questions in
     let r = get_answer q.q_name q.q_type d.id in
     let p = marshal r in
-    Net.Datagram.UDPv4.send mgr ~src dst p
+    let _ = Net.Datagram.UDPv4.send mgr ~src dst p in return ()
   )
 
 let leaky mgr src dst bits =
@@ -78,12 +78,12 @@ let leaky mgr src dst bits =
     let q = List.hd d.questions in
     let r = get_answer_memo q.q_name q.q_type d.id in
     let p = marshal r in
-
     Net.Datagram.UDPv4.send mgr ~src dst p
   )
    
 let listen ?(mode=`none) ~zonebuf mgr src =
   Dnsserver.load_zone [] zonebuf;
+  Gc.compact ();
   Net.Datagram.UDPv4.(recv mgr src
                         (match mode with
                           |`none -> no_memo mgr src
