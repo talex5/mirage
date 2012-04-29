@@ -766,9 +766,10 @@ val takebits : int -> bitstring -> bitstring
     Note that this function just changes the offset and length
     fields of the {!bitstring} tuple, so is very efficient. *)
 
-val concat : bitstring list -> bitstring
+val concat : bitstring -> bitstring list -> bitstring
 (** Concatenate a list of bitstrings together into a single
-    bitstring. *)
+    bitstring. They are copied into the first parameter, and
+    the returned bitstring is the resulting concatenated value *)
 
 (** {3 Constructing bitstrings} *)
 
@@ -866,7 +867,7 @@ val hexdump_bitstring : out_channel -> bitstring -> unit
 
 module Buffer : sig
   type t
-  val create : unit -> t
+  val create : string * int * int -> t
   val contents : t -> bitstring
   val add_bits : t -> string -> int -> unit
   val add_bit : t -> bool -> unit

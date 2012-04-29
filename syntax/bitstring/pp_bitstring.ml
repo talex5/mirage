@@ -429,9 +429,10 @@ let output_constructor _loc fields =
 
   let expr =
     <:expr<
-      let $lid:buffer$ = Bitstring.Buffer.create () in
-      $fields$;
-      Bitstring.Buffer.contents $lid:buffer$
+      let $lid:buffer$ buf =
+        Bitstring.Buffer.create buf in
+        $fields$;
+        Bitstring.Buffer.contents $lid:buffer$
     >> in
 
   if !exn_used then

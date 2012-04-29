@@ -767,27 +767,25 @@ external extract_fastpath_int64_ne_signed : string -> int -> int64 -> int64 = "o
 
 module Buffer = struct
   type t = {
-    buf : Buffer.t;
-    mutable len : int;			(* Length in bits. *)
+    buf : string;
+    off : int;  (* Initial offset into the buffer *)
+    mutable len : int;			(* Length in bits from the beginning of buf. *)
     (* Last byte in the buffer (if len is not aligned).  We store
      * it outside the buffer because buffers aren't mutable.
      *)
     mutable last : int;
   }
 
-  let create () =
-    (* XXX We have almost enough information in the generator to
-     * choose a good initial size.
-     *)
-    { buf = Buffer.create 128; len = 0; last = 0 }
+  let create (buf,off,_) =
+    (* XXX we ignore the bitstring length for now *)
+    { buf; off; len = off; last = 0 }
 
-  let contents { buf = buf; len = len; last = last } =
-    let data =
-      if len land 7 = 0 then
-	Buffer.contents buf
-      else
-	Buffer.contents buf ^ (String.make 1 (Char.chr last)) in
-    data, 0, len
+  let contents { buf = buf; off = off; len = len; last = last } =
+    if len land 7 <> 0 then begin
+      Printf.printf "warnig: unaligned buffer in Bitstring\n%!";
+      buf.[(len+7) lsr 3] <- Char.chr last;
+    end;
+    buf, off, (len - off)
 
   (* Add exactly 8 bits. *)
   let add_byte ({ buf = buf; len = len; last = last } as t) byte =
@@ -795,12 +793,12 @@ module Buffer = struct
     let shift = len land 7 in
     if shift = 0 then
       (* Target buffer is byte-aligned. *)
-      Buffer.add_char buf (Char.chr byte)
+      buf.[len lsr 3] <- Char.chr byte
     else (
       (* Target buffer is unaligned.  'last' is meaningful. *)
       let first = byte lsr shift in
       let second = (byte lsl (8 - shift)) land 0xff in
-      Buffer.add_char buf (Char.chr (last lor first));
+      buf.[len lsr 3] <- Char.chr (last lor first);
       t.last <- second
     );
     t.len <- t.len + 8
@@ -814,7 +812,7 @@ module Buffer = struct
     else (
       (* Just a single spare bit in 'last'. *)
       let last = last lor if bit then 1 else 0 in
-      Buffer.add_char buf (Char.chr last);
+      buf.[len lsr 3] <- Char.chr last;
       t.last <- 0
     );
     t.len <- len + 1
@@ -834,13 +832,13 @@ module Buffer = struct
       if len land 7 = 0 then (
 	if slen land 7 = 0 then
 	  (* Common case - everything is byte-aligned. *)
-	  Buffer.add_substring buf str 0 (slen lsr 3)
+          String.blit str 0 buf (len lsr 3) (slen lsr 3)
 	else (
 	  (* Target buffer is aligned.  Copy whole bytes then leave the
 	   * remaining bits in last.
 	   *)
 	  let slenbytes = slen lsr 3 in
-	  if slenbytes > 0 then Buffer.add_substring buf str 0 slenbytes;
+	  if slenbytes > 0 then String.blit str 0 buf (len lsr 3) slenbytes;
 	  let last = Char.code str.[slenbytes] in (* last char *)
 	  let mask = 0xff lsl (8 - (slen land 7)) in
 	  t.last <- last land mask
@@ -998,8 +996,8 @@ let construct_bitstring buf (data, off, len) =
   Buffer.add_bits buf data len
 
 (* Concatenate bitstrings. *)
-let concat bs =
-  let buf = Buffer.create () in
+let concat srcbs bs =
+  let buf = Buffer.create srcbs in
   List.iter (construct_bitstring buf) bs;
   Buffer.contents buf
 
