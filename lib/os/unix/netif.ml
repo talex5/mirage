@@ -108,12 +108,13 @@ let destroy nf =
   printf "tap_destroy\n%!";
   return ()
 
-(* Transmit a packet from a bitstring *)
-let output t bss =
-  let buf,off,len = Bitstring.concat bss in
+(* Transmit a packet from an Io_page *)
+let output t page =
+  let buf,off,len = Io_page.to_bitstring page in
   let off = off/8 in
   let len = len/8 in
   lwt len' = Socket.fdbind Activations.write (fun fd -> Socket.write fd buf off len) t.dev in
+  Io_page.put page;
   if len' <> len then
     raise_lwt (Failure (sprintf "tap: partial write (%d, expected %d)" len' len))
   else
