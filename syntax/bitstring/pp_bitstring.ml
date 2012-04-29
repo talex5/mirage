@@ -429,8 +429,8 @@ let output_constructor _loc fields =
 
   let expr =
     <:expr<
-      let $lid:buffer$ buf =
-        Bitstring.Buffer.create buf in
+      fun buf ->
+        let $lid:buffer$ = Bitstring.Buffer.create buf in
         $fields$;
         Bitstring.Buffer.contents $lid:buffer$
     >> in
