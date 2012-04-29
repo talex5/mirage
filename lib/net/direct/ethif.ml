@@ -73,27 +73,30 @@ let input t frame =
 let rec listen t =
   OS.Netif.listen t.ethif (input t)
 
-let output t frame =
-  OS.Netif.output t.ethif frame
+let output t page =
+  OS.Netif.output t.ethif page
 
 let output_arp ethif arp =
-  let dmac = ethernet_mac_to_bytes arp.tha in
-  let smac = ethernet_mac_to_bytes arp.sha in
-  let spa = ipv4_addr_to_uint32 arp.spa in
-  let tpa = ipv4_addr_to_uint32 arp.tpa in
-  let op = match arp.op with |`Request->1 |`Reply->2 |`Unknown n -> n in
-  let frame = BITSTRING {
-    dmac:48:string; smac:48:string;
-    0x0806:16;  (* ethertype *)
-    1:16;       (* htype *)
-    0x0800:16;  (* ptype *)
-    6:8;        (* hlen *)
-    4:8;        (* plen *)
-    op:16;
-    smac:48:string; spa:32;
-    dmac:48:string; tpa:32
-  } in
-  OS.Netif.output ethif [frame]
+  OS.Io_page.with_page (fun page ->
+    let bs = OS.Io_page.to_bitstring page in
+    let dmac = ethernet_mac_to_bytes arp.tha in
+    let smac = ethernet_mac_to_bytes arp.sha in
+    let spa = ipv4_addr_to_uint32 arp.spa in
+    let tpa = ipv4_addr_to_uint32 arp.tpa in
+    let op = match arp.op with |`Request->1 |`Reply->2 |`Unknown n -> n in
+    let frame = BITSTRING {
+      dmac:48:string; smac:48:string;
+      0x0806:16;  (* ethertype *)
+      1:16;       (* htype *)
+      0x0800:16;  (* ptype *)
+      6:8;        (* hlen *)
+      4:8;        (* plen *)
+      op:16;
+      smac:48:string; spa:32;
+      dmac:48:string; tpa:32
+    } bs in
+    OS.Netif.output ethif page
+  )
 
 let create ethif =
   let ipv4 = (fun _ -> return ()) in
@@ -139,5 +142,3 @@ let mac t = t.mac
 let get_ethif t =
   t.ethif
 
-let send_raw t frame =
-  OS.Netif.output t.ethif frame

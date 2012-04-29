@@ -26,7 +26,7 @@ type t
 
 val input : t -> string * int * int -> unit Lwt.t
 val listen : t -> unit Lwt.t
-val output : t -> Bitstring.t list -> unit Lwt.t
+val output : t -> OS.Io_page.t -> unit Lwt.t
 val output_arp : OS.Netif.t -> Nettypes.arp -> unit Lwt.t
 val create : OS.Netif.t -> t * unit Lwt.t
 val create_raw : OS.Netif.t -> t * unit Lwt.t
@@ -38,4 +38,3 @@ val detach : t -> [< `IPv4 ] -> unit
 val mac : t -> Nettypes.ethernet_mac
 val intercept:  t -> (string -> string * int * int  -> unit Lwt.t) -> unit 
 val get_ethif : t -> OS.Netif.t
-val send_raw : t -> Bitstring.t list -> unit Lwt.t 
