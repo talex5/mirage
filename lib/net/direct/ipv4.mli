@@ -17,8 +17,14 @@
 open Nettypes
 
 type t
-val output: t -> proto:[< `ICMP | `TCP | `UDP ] -> dest_ip:ipv4_addr -> Bitstring.t list -> unit Lwt.t
-val set_ip: t -> ipv4_addr -> unit Lwt.t
+
+type proto = [ `ICMP | `TCP | `UDP ]
+
+val writebuf : t -> proto:proto -> dest_ip:Nettypes.ipv4_addr -> (OS.Io_page.view * OS.Io_page.view) Lwt.t
+val output : t -> OS.Io_page.view -> unit Lwt.t
+
+
+val set_ip: t -> ipv4_addr -> unit Lwt.t 
 val get_ip: t -> ipv4_addr
 val mac: t -> ethernet_mac
 val set_netmask: t -> ipv4_addr -> unit Lwt.t

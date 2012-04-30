@@ -18,6 +18,8 @@ open Lwt
 open Printf
 open Nettypes
 
+type proto = [ `ICMP | `TCP | `UDP ]
+
 type classify =
   |Broadcast
   |Gateway
@@ -35,57 +37,75 @@ type t = {
   mutable tcp: src:ipv4_addr -> dst:ipv4_addr -> Bitstring.t -> unit Lwt.t;
 }
 
-(* XXX should optimise this! *)
 let is_local t ip =
   let ipand a b = Int32.logand (ipv4_addr_to_uint32 a) (ipv4_addr_to_uint32 b) in
   (ipand t.ip t.netmask) = (ipand ip t.netmask)
 
 let destination_mac t = function
-  | ip when ip = ipv4_broadcast || ip = ipv4_blank -> (* Broadcast *)
-      return ethernet_mac_broadcast
-  | ip when is_local t ip -> (* Local *)
-      Ethif.query_arp t.ethif ip
-  | ip -> begin (* Gateway *)
-      match t.gateways with 
-      | hd :: _ -> Ethif.query_arp t.ethif hd
-      | [] -> 
-          printf "IP.output: no route to %s\n%!" (ipv4_addr_to_string ip);
-          fail (No_route_to_destination_address ip)
-    end
+  |ip when ip = ipv4_broadcast || ip = ipv4_blank -> (* Broadcast *)
+     return ethernet_mac_broadcast
+  |ip when is_local t ip -> (* Local *)
+     Ethif.query_arp t.ethif ip
+  |ip -> begin (* Gateway *)
+     match t.gateways with 
+     | hd :: _ -> Ethif.query_arp t.ethif hd
+     | [] -> 
+        printf "IP.output: no route to %s\n%!" (ipv4_addr_to_string ip);
+        fail (No_route_to_destination_address ip)
+  end
 
-let output t ~proto ~dest_ip (pkt:Bitstring.t list) =
-  let ttl = 38 in (* TODO TTL *)
-  lwt dmac = destination_mac t dest_ip >|= ethernet_mac_to_bytes in
-  let smac = ethernet_mac_to_bytes (Ethif.mac t.ethif) in
-  let ihl = 0 + 5 in (* No IP options support yet *)
-  let tlen = (List.fold_left (fun a b -> 
-    Bitstring.bitstring_length b + a) 0 pkt) / 8 + (ihl * 4) in
-  let tos = 0 in
-  let ipid = Random.int 65535 in (* TODO support ipid *)
-  let flags = 0 in (* TODO expose DF/MF frag flags *)
-  let fragoff = 0 in
+(* Obtain an Ethernet write buffer by looking up the destination
+ * desired. *)
+let writebuf t ~proto ~dest_ip =
+  let page = OS.Io_page.get () in
+  let view = OS.Io_page.get_view page in
+  let bs = OS.Io_page.to_bitstring view in
   let proto = match proto with |`ICMP -> 1 |`TCP -> 6 |`UDP -> 17 in
   let src = ipv4_addr_to_uint32 t.ip in
   let dst = ipv4_addr_to_uint32 dest_ip in
-  let frame = BITSTRING {
-    dmac:48:string; smac:48:string; 0x0800:16;
-    4:4; 5:4; tos:8; tlen:16; ipid:16; flags:3; fragoff:13;
-    ttl:8; proto:8; 0:16; src:32; dst:32
-  } in
-  let framebuf, frameoff, framelen = frame in
-  let ipv4_header = (framebuf, (frameoff + (48+48+16)), (framelen - (48+48+16))) in
+  let ttl = 38 in (* TODO TTL *)
+  lwt dmac = destination_mac t dest_ip >|= ethernet_mac_to_bytes in
+  let smac = ethernet_mac_to_bytes (Ethif.mac t.ethif) in
+  let _, foff, flen = BITSTRING { dmac:48:string; smac:48:string;
+    0x0800:16; 4:4; 5:4; 0:8; 0:16; 0:16; 0:3;
+    0:13; ttl:8; proto:8; 0:16; src:32; dst:32 } bs in
+  let flen_bytes = flen lsr 3 in
+  let frameview = OS.Io_page.set_view_len view flen_bytes in
+  let appview = OS.Io_page.get_subview view flen_bytes in
+  (* Return the remainder of the page as a sub-view *)
+  let rlen = (Bitstring.bitstring_length bs) - flen in
+  (* Return the full frame (for future adjustment) and the application area (appbs) *)
+  return (frameview, appview)
+ 
+(* Assume the output has been previously stamped by the writebuf,
+ * so we just adjust the contents here. *)
+let output t view =
+  (* Work backwards and generate the upper-level view of the frame as
+   * generated in get_writebuf above *)
+  let (framebuf, frameoff, framelen) as frame = OS.Io_page.to_bitstring view in
+  let ihl = 5 in (* No IP options support yet *)
+  let ihl_bits = ihl * 4 * 8 in
+  let tlen = (framelen - (48+48+16)) lsr 3 in
+  let ipid = Random.int 65535 in (* TODO support ipid *)
+  (* Adjust the IPv4 headers with checksum and such *)
+  let adj_bs = Bitstring.subbitstring frame (48+48+16+4+4+8) 0 in
+  let _ = BITSTRING { tlen:16; ipid:16 } adjbs in
+  let ipv4_header = framebuf, (frameoff + (48+48+16)), ihl_bits in
+  let checksum_offset = (48+48+16+4+4+8+16+16+3+13+8+8) in
+  let checksum_bs = framebuf, checksum_offset, 16 in
+  let _ = BITSTRING { 0:16 } checksum_bs in
   let checksum = Checksum.ones_complement ipv4_header in
-  let checksum_bs,_,_ = BITSTRING { checksum:16 } in
-  let checksum_offset = (48+48+16+4+4+8+16+16+3+13+8+8) / 8 in
-  framebuf.[checksum_offset] <- Char.chr (checksum lsr 8);
-  framebuf.[checksum_offset+1] <- Char.chr (checksum land 255);
-  Ethif.output t.ethif (frame :: pkt)
+  let _ = BITSTRING { checksum:16 } checksum_bs in
+  Ethif.output t.ethif view
 
 let input t pkt =
   bitmatch pkt with
-  |{4:4; ihl:4; tos:8; tlen:16; ipid:16; flags:3; fragoff:13;
-    ttl:8; proto:8; checksum:16; src:32:bind(ipv4_addr_of_uint32 src); dst:32:bind(ipv4_addr_of_uint32 dst);
+  |{4:4; ihl:4; tos:8; tlen:16; ipid:16;
+    flags:3; fragoff:13; ttl:8; proto:8; checksum:16;
+    src:32:bind(ipv4_addr_of_uint32 src);
+    dst:32:bind(ipv4_addr_of_uint32 dst);
     _ (* options *):(ihl-5)*32:bitstring; data:-1:bitstring } ->
+
       begin match proto with
       |1 -> (* ICMP *) t.icmp src data
       |6 -> (* TCP *) t.tcp ~src ~dst data
