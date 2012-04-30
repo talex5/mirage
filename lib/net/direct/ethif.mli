@@ -26,7 +26,7 @@ type t
 
 val input : t -> string * int * int -> unit Lwt.t
 val listen : t -> unit Lwt.t
-val output : t -> OS.Io_page.t -> unit Lwt.t
+val output : t -> OS.Io_page.view -> unit Lwt.t
 val output_arp : OS.Netif.t -> Nettypes.arp -> unit Lwt.t
 val create : OS.Netif.t -> t * unit Lwt.t
 val create_raw : OS.Netif.t -> t * unit Lwt.t

@@ -73,18 +73,19 @@ let input t frame =
 let rec listen t =
   OS.Netif.listen t.ethif (input t)
 
-let output t page =
-  OS.Netif.output t.ethif page
+let output t view =
+  OS.Netif.output t.ethif view
 
 let output_arp ethif arp =
   OS.Io_page.with_page (fun page ->
-    let bs = OS.Io_page.to_bitstring page in
+    let view = OS.Io_page.get_view page in
     let dmac = ethernet_mac_to_bytes arp.tha in
     let smac = ethernet_mac_to_bytes arp.sha in
     let spa = ipv4_addr_to_uint32 arp.spa in
     let tpa = ipv4_addr_to_uint32 arp.tpa in
-    let op = match arp.op with |`Request->1 |`Reply->2 |`Unknown n -> n in
-    let frame = BITSTRING {
+    let op = match arp.op with
+      |`Request->1 |`Reply->2 |`Unknown n -> n in
+    let framebuf, frameoff, framelen = BITSTRING {
       dmac:48:string; smac:48:string;
       0x0806:16;  (* ethertype *)
       1:16;       (* htype *)
@@ -94,8 +95,9 @@ let output_arp ethif arp =
       op:16;
       smac:48:string; spa:32;
       dmac:48:string; tpa:32
-    } bs in
-    OS.Netif.output ethif page
+    } (OS.Io_page.to_bitstring view) in
+    let txview = OS.Io_page.set_view_len view (framelen lsr 3) in
+    OS.Netif.output ethif txview
   )
 
 let create ethif =
