@@ -26,7 +26,6 @@ type t = {
   mac: string;
 }
 
-
 exception Ethif_closed
 
 (* We must generate a fake MAC for the Unix "VM", as using the
@@ -108,13 +107,11 @@ let destroy nf =
   printf "tap_destroy\n%!";
   return ()
 
-(* Transmit a packet from an Io_page *)
-let output t page =
-  let buf,off,len = Io_page.to_bitstring page in
-  let off = off/8 in
-  let len = len/8 in
+(* Transmit a packet from an Io_page withs starting offset and length (in bytes) *)
+let output t view =
+  let buf,off,len = Io_page.to_substring view in
   lwt len' = Socket.fdbind Activations.write (fun fd -> Socket.write fd buf off len) t.dev in
-  Io_page.put page;
+  Printf.eprintf "netif output off %d len %d len' %d\n%!" off len len';
   if len' <> len then
     raise_lwt (Failure (sprintf "tap: partial write (%d, expected %d)" len' len))
   else
@@ -125,4 +122,3 @@ let ethid t =
 
 let mac t =
   t.mac 
-
