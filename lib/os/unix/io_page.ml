@@ -17,17 +17,23 @@
 
 open Lwt
 
-type t = {
-  page: Bitstring.t;
-  mutable detached: bool;
+(* A page suitable for IO operations. Represented on UNIX as a normal string,
+ * but may also be a Bigarray in the near future *)
+type page = {
+  pbuf: string;
+  poff: int;
+  plen: int;
 }
+
+(* Page allocation *)
 
 let free_list = Queue.create ()
 
 let page_size = 4096
 
 let alloc () =
-  let page = Bitstring.bitstring_of_string (String.create page_size) in
+  let pbuf = String.create page_size in
+  let page = { pbuf; poff=0; plen=page_size } in
   Queue.add page free_list
 
 let get () =
@@ -37,19 +43,16 @@ let get () =
     with Queue.Empty -> begin
       alloc ();
       inner ()
-    end in
-  { page = inner (); detached = false }
+    end
+  in
+  inner ()
 
 let rec get_n = function
   | 0 -> []
   | n -> get () :: (get_n (n - 1))
 
-let return_to_free_list (x: Bitstring.t) =
-  (* TODO: assert that the buf is a page aligned one we allocated above *)
-  Queue.add x free_list
-
-let put (x: t) =
-  if not x.detached then return_to_free_list x.page
+let put page = 
+  Queue.add page free_list
 
 let with_page f =
   let a = get () in
@@ -73,17 +76,42 @@ let with_pages n f =
     fail exn
   end
 
-(*
-let detach (x: t) =
-  Gc.finalise return_to_free_list x.page;
-  x.detached <- true
-*)
+(* View management *)
 
-let to_bitstring (x: t) =
-  x.page
-
-let of_bitstring (x: Bitstring.t) = {
-  page = x;
-  detached = true (* XXX: assume this page has already been detached *)
+(* A view takes a slice of a page, and all addressing is relative to 
+ * the * page offsets *)
+type view = {
+  page: page;
+  off: int;
+  len: int;
 }
+
+let get_view page =
+  { page; off=0; len=page_size }
+
+(* Narrow the view by off bytes, return a smaller view.
+ * If len is provided, then it be *)
+let get_subview view n =
+  let off = view.off + n in
+  let len = view.len - n in
+  { page=view.page; off; len }
+
+(* Set view length to new value *)
+let set_view_len view len =
+  { view with len=len }
+
+let add_view_len view len =
+  { view with len=view.len + len }
+
+let to_bitstring view =
+  let buf = view.page.pbuf in
+  let off = (view.page.poff + view.off) lsl 3 in
+  let len = view.len lsl 3 in
+  buf, off, len
+
+let to_substring view =
+  let buf = view.page.pbuf in
+  let off = view.page.poff + view.off in
+  let len = view.len in
+  buf, off, len
 
