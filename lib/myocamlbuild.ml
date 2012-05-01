@@ -45,7 +45,7 @@ module Spec = struct
 
   (* Current spec *)
   let t =
-    let spec = getenv "SPEC" ~default:"unix-socket" in
+    let spec = getenv "SPEC" ~default:"unix-direct" in
     try
       let t = Hashtbl.find specs spec in
       Options.build_dir := "_build/" ^ spec;
