@@ -33,13 +33,28 @@ let input t ~src ~dst pkt =
   end else
     return ()
 
+let udp_header = 16+16+16+16
+let udp_header_bytes = udp_header / 8
+
 (* UDP output needs the IPv4 header to generate the pseudo
    header for checksum calculation. Although we currently just
    set the checksum to 0 as it is optional *)
-let output t ~dest_ip ~source_port ~dest_port pkt =
-  let length = Bitstring.bitstring_length pkt / 8 + 8 in
-  let header = BITSTRING { source_port:16; dest_port:16; length:16; 0:16 } in
-  Ipv4.output t.ip ~proto:`UDP ~dest_ip [header; pkt]
+let writebuf t ~dest_ip ~source_port ~dest_port =
+  (* Obtain an IPv4 writebuf *)
+  lwt app_view = Ipv4.writebuf t.ip ~proto:`UDP ~dest_ip in
+  let app_bs = OS.Io_page.to_bitstring app_view in 
+  let _ = BITSTRING { source_port:16; dest_port:16; 0:16; 0:16 } app_bs in
+  let udp_frame = OS.Io_page.get_subview app_view udp_header_bytes in
+  return udp_frame
+
+let output t app_view =
+  let udp_view = OS.Io_page.get_superview app_view udp_header_bytes in
+  (* set length *)
+  let hbuf,hoff,hlen = OS.Io_page.to_bitstring udp_view in
+  let length_bs = hbuf, (hoff + 32), 0 in
+  let plen = OS.Io_page.get_view_len app_view in
+  let _ = BITSTRING { plen: 16 } length_bs in
+  Ipv4.output t.ip udp_view
 
 let listen t port fn =
   if Hashtbl.mem t.listeners port then

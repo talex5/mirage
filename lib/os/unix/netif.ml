@@ -110,8 +110,8 @@ let destroy nf =
 (* Transmit a packet from an Io_page withs starting offset and length (in bytes) *)
 let output t view =
   let buf,off,len = Io_page.to_substring view in
-  lwt len' = Socket.fdbind Activations.write (fun fd -> Socket.write fd buf off len) t.dev in
-  Printf.eprintf "netif output off %d len %d len' %d\n%!" off len len';
+  lwt len' = Socket.fdbind Activations.write 
+    (fun fd -> Socket.write fd buf off len) t.dev in
   if len' <> len then
     raise_lwt (Failure (sprintf "tap: partial write (%d, expected %d)" len' len))
   else

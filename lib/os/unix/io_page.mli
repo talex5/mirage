@@ -46,11 +46,15 @@ type view
 (* Retrieve a view from the page. *)
 val get_view : page -> view
 
-(* Narrow the view from the beginning by [n] bytes, returning the new view *)
+(* Narrow the view away from the beginning by [n] bytes, returning the new view *)
 val get_subview : view -> int -> view
+
+(* Expand the view towards the beginning by [n] bytes, returning the new view *)
+val get_superview: view -> int -> view
 
 val set_view_len : view -> int -> view
 val add_view_len : view -> int -> view
+val get_view_len : view -> int
 
 (** Return the current view as a bitstring *)
 val to_bitstring: view -> Bitstring.t

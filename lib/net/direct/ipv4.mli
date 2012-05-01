@@ -20,7 +20,7 @@ type t
 
 type proto = [ `ICMP | `TCP | `UDP ]
 
-val writebuf : t -> proto:proto -> dest_ip:Nettypes.ipv4_addr -> (OS.Io_page.view * OS.Io_page.view) Lwt.t
+val writebuf : t -> proto:proto -> dest_ip:Nettypes.ipv4_addr -> OS.Io_page.view Lwt.t
 val output : t -> OS.Io_page.view -> unit Lwt.t
 
 

@@ -96,12 +96,19 @@ let get_subview view n =
   let len = view.len - n in
   { page=view.page; off; len }
 
+let get_superview view n =
+  let off = view.off - n in
+  let len = view.len + n in
+  { page=view.page; off; len }
+
 (* Set view length to new value *)
 let set_view_len view len =
   { view with len=len }
 
 let add_view_len view len =
   { view with len=view.len + len }
+
+let get_view_len view = view.len
 
 let to_bitstring view =
   let buf = view.page.pbuf in

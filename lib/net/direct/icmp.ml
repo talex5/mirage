@@ -26,15 +26,16 @@ let input t src pkt =
   bitmatch pkt with
   |{0:8; code:8; csum:16; id:16; seq:16; _:-1:bitstring} -> (* echo reply *)
     return (printf "ICMP: discarding echo reply\n%!")
+
   |{8:8; code:8; csum:16; id:16; seq:16; data:-1:bitstring} -> (* echo req *)
     (* Adjust checksum for reply and transmit EchoReply *)
     let csum = (csum + 0x0800) land 0xffff in
-    lwt frameview, appview = Ipv4.writebuf t.ip ~proto:`ICMP ~dest_ip:src in
-    let app_bs = OS.Io_page.to_bitstring appview in
+    lwt app_view = Ipv4.writebuf t.ip ~proto:`ICMP ~dest_ip:src in
+    let app_bs = OS.Io_page.to_bitstring app_view in
     let _,_,plen = BITSTRING { 0:8; code:8; csum:16; id:16; seq:16; data:-1:bitstring } app_bs in
-    let tx = OS.Io_page.add_view_len frameview (plen lsr 3) in
-    Ipv4.output t.ip tx
-  |{ty:8; code:8; csum:16; id:16; seq:16; data:-1:bitstring} -> (* unknown *)
+    let app_view = OS.Io_page.set_view_len app_view (plen lsr 3) in
+    Ipv4.output t.ip app_view
+  |{ty:8; code:8; csum:16; id:16; seq:16; _:-1:bitstring} -> (* unknown *)
     printf "ICMP unknown ty %d code %d id %d\n%!" ty code id;
     return ()
 

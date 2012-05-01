@@ -54,6 +54,10 @@ let destination_mac t = function
         fail (No_route_to_destination_address ip)
   end
 
+let ether_header = 48+48+16
+let ipv4_header = 4+4+8+16+16+3+13+8+8+16+32+32
+let ipv4_csum = 48+48+16+4+4+8+16+16+3+13+8+8
+
 (* Obtain an Ethernet write buffer by looking up the destination
  * desired. *)
 let writebuf t ~proto ~dest_ip =
@@ -70,29 +74,27 @@ let writebuf t ~proto ~dest_ip =
     0x0800:16; 4:4; 5:4; 0:8; 0:16; 0:16; 0:3;
     0:13; ttl:8; proto:8; 0:16; src:32; dst:32 } bs in
   let flen_bytes = flen lsr 3 in
-  let frameview = OS.Io_page.set_view_len view flen_bytes in
   let appview = OS.Io_page.get_subview view flen_bytes in
-  (* Return the remainder of the page as a sub-view *)
-  let rlen = (Bitstring.bitstring_length bs) - flen in
-  (* Return the full frame (for future adjustment) and the application area (appbs) *)
-  return (frameview, appview)
+  (* Return the application area (appbs) *)
+  return appview
  
 (* Assume the output has been previously stamped by the writebuf,
  * so we just adjust the contents here. *)
-let output t view =
+let output t appview =
   (* Work backwards and generate the upper-level view of the frame as
    * generated in get_writebuf above *)
+  let view = OS.Io_page.get_superview appview ((ether_header + ipv4_header) lsr 3) in
   let (framebuf, frameoff, framelen) as frame = OS.Io_page.to_bitstring view in
+  (* Adjust fields *)
   let ihl = 5 in (* No IP options support yet *)
   let ihl_bits = ihl * 4 * 8 in
   let tlen = (framelen - (48+48+16)) lsr 3 in
   let ipid = Random.int 65535 in (* TODO support ipid *)
   (* Adjust the IPv4 headers with checksum and such *)
   let adj_bs = Bitstring.subbitstring frame (48+48+16+4+4+8) 0 in
-  let _ = BITSTRING { tlen:16; ipid:16 } adjbs in
+  let _ = BITSTRING { tlen:16; ipid:16 } adj_bs in
   let ipv4_header = framebuf, (frameoff + (48+48+16)), ihl_bits in
-  let checksum_offset = (48+48+16+4+4+8+16+16+3+13+8+8) in
-  let checksum_bs = framebuf, checksum_offset, 16 in
+  let checksum_bs = framebuf, ipv4_csum, 16 in
   let _ = BITSTRING { 0:16 } checksum_bs in
   let checksum = Checksum.ones_complement ipv4_header in
   let _ = BITSTRING { checksum:16 } checksum_bs in
