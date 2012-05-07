@@ -38,6 +38,7 @@ type pcb = {
   urx_close_t: unit Lwt.t;      (* App rx close thread *)
   urx_close_u: unit Lwt.u;      (* App rx connection close wakener *)
   utx: User_buffer.Tx.t;         (* App tx buffer *)
+  pseudo_header: Bitstring.t;
 }
 
 type connection = (pcb * unit Lwt.t) 
@@ -64,16 +65,22 @@ module Tx = struct
 
   exception IO_error
 
-  let checksum ~src ~dst pkt =
-    let src = ipv4_addr_to_uint32 src in
-    let dst = ipv4_addr_to_uint32 dst in
-    let len = (List.fold_left (fun a b -> Bitstring.bitstring_length b + a) 0 pkt) / 8 in
-    let pseudo_header = BITSTRING { src:32; dst:32; 0:8; 6:8; len:16 } in
-    Checksum.ones_complement_list (pseudo_header :: pkt)
+  (* Obtain a TCP write buffer. No immutable optimisations (yet) *)
+  let get_writebuf t pcb =
+    lwt app_view = Ipv4.writebuf ~proto:`TCP ~dest_ip:pcb.id.dest_ip t.ip in
+    return app_view
+ 
+  let checksum pcb data =
+    let len = (Bitstring.bitstring_length data) lsr 3 in
+    let buf,_,_ = pcb.pseudo_header in
+    buf.[13] <- Char.chr (len lsr 8);
+    buf.[14] <- Char.chr (len land 255);
+    Checksum.ones_complement_list [pcb.pseudo_header; data]
 
   (* Output a general TCP packet, checksum it, and if a reference is provided,
      also record the sent packet for retranmission purposes *)
-  let xmit ip id ~flags ~rx_ack ~seq ~window ~options data =
+  let xmit ip pcb ~flags ~rx_ack ~seq ~window ~options view =
+    let id = pcb.id in
     let {dest_port; dest_ip; local_port; local_ip} = id in
     let rst = flags = Segment.Tx.Rst in
     let syn = flags = Segment.Tx.Syn in
@@ -82,39 +89,50 @@ module Tx = struct
     let ack = match rx_ack with Some _ -> true |None -> false in
     let ack_number = match rx_ack with Some n -> Sequence.to_int32 n |None -> 0l in
     let sequence = Sequence.to_int32 seq in
-    (* printf "TCP xmit: dest_ip=%s %s%s%s%sseq=%lu ack=%lu\n%!" (ipv4_addr_to_string dest_ip)
+    printf "TCP xmit: dest_ip=%s %s%s%s%sseq=%lu ack=%lu\n%!" (ipv4_addr_to_string dest_ip)
       (if rst then "RST " else "") (if syn then "SYN " else "")
-      (if fin then "FIN " else "") (if ack then "ACK " else "") sequence ack_number; *)
-    let options = Options.marshal options in
-    let data_offset = (Bitstring.bitstring_length options + 160) / 32 in
-    let header = BITSTRING {
-      local_port:16; dest_port:16; sequence:32; ack_number:32; 
-      data_offset:4; 0:6; false:1; ack:1; psh:1; rst:1; syn:1; fin:1; window:16; 
-      0:16; 0:16 } in
-    let frame = [header;options;data] in
-    let checksum = checksum ~src:local_ip ~dst:dest_ip frame in
-    let checksum_bs,_,_ = BITSTRING { checksum:16 } in
-    let header_buf,_,_ = header in
-    header_buf.[16] <- checksum_bs.[0];
-    header_buf.[17] <- checksum_bs.[1];
-    Ipv4.output ip ~proto:`TCP ~dest_ip frame >>
-    return frame
+      (if fin then "FIN " else "") (if ack then "ACK " else "") sequence ack_number; 
+    (* We do not adjust the mbuf in writebuf, so this is a noop for now *)
+    let (header_buf, ip_header_off, ip_body_len) as ip_header_bs = OS.Io_page.to_bitstring view in
+    let options_bits = Options.marshal_bits options in
+    let data_offset_words = (options_bits + 160) / 32 in
+    (* Stamp the TCP header *)
+    let _ = BITSTRING { local_port:16; dest_port:16; sequence:32; ack_number:32; 
+      data_offset_words:4; 0:6; false:1; ack:1; psh:1; rst:1; syn:1; 
+      fin:1; window:16; 0:16; 0:16 } ip_header_bs in
+    let ip_header_len = 16+16+32+32+4+6+1+1+1+1+1+1+16+16+16 in
+    (* Stamp the options and return the new offset into the app frame after the TCP header *)
+    let tcp_header_off =
+      if options_bits > 0 then begin
+        let options_bs = header_buf, (ip_header_off+ip_header_len), 0 in
+        Options.marshal options options_bs;
+        ip_header_off+ip_header_len+options_bits
+      end else
+        ip_header_off+ip_header_len
+    in
+    let tcp_header_and_data_bs = OS.Io_page.to_bitstring view in
+    let checksum = checksum pcb tcp_header_and_data_bs in
+    let checksum_off = (ip_header_off lsr 3) + 16 in
+    header_buf.[checksum_off] <- Char.chr (checksum lsr 3);
+    header_buf.[checksum_off+1] <- Char.chr (checksum land 255);
+    Ipv4.output ip view >>
+    return view
 
   (* Output a TCP packet, and calculate some settings from a state descriptor *)
-  let xmit_pcb ip id ~flags ~wnd ~options ~seq data =
+  let xmit_pcb ip id ~flags ~wnd ~options ~seq view =
     let window = Int32.to_int (Window.rx_wnd_unscaled wnd) in
     let rx_ack = Some (Window.rx_nxt wnd) in
-    xmit ip id ~flags ~rx_ack ~seq ~window ~options data
+    xmit ip id ~flags ~rx_ack ~seq ~window ~options view
 
   (* Output an RST response when we dont have a PCB *)
-  let send_rst t id ~sequence ~ack_number ~syn ~fin ~data =
+  let send_rst t pcb ~sequence ~ack_number ~syn ~fin ~data =
     let datalen = Int32.of_int ((Bitstring.bitstring_length data / 8) +
                   (if syn then 1 else 0) + (if fin then 1 else 0)) in
     let window = 0 in
     let options = [] in
     let seq = Sequence.of_int32 ack_number in
     let rx_ack = Some (Sequence.of_int32 (Int32.add sequence datalen)) in
-    xmit t.ip id ~flags:Segment.Tx.Rst ~rx_ack ~seq ~window ~options ("",0,0) >>
+    xmit t.ip pcb ~flags:Segment.Tx.Rst ~rx_ack ~seq ~window ~options ("",0,0) >>
     return ()
 
   (* Output a SYN packet *)
@@ -481,8 +499,11 @@ let write_wait_for pcb sz =
 (* URG_TODO: raise exception when trying to write to closed connection
              instead of quietly returning *)
 (* Write a segment *)
-let write pcb data =
-  User_buffer.Tx.write pcb.utx data
+let write pcb view =
+  User_buffer.Tx.write pcb.utx view
+
+let get_writebuf t pcb =
+  User_buffer.Tx.get_writebuf t pcb
 
 (* URG_TODO: raise exception when trying to write to closed connection *)
 (* Write a segment without using Nagle's algorithm*)

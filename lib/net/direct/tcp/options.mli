@@ -23,6 +23,7 @@ type t =
   |Unknown of int * string         (* RFC793 *)
 
 type ts = t list
-val marshal: ts -> Bitstring.t
+val marshal: ts -> Bitstring.t -> unit
+val marshal_bits: ts -> int
 val of_packet : Bitstring.t -> t list
 val prettyprint : t list -> string

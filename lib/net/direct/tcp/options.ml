@@ -55,39 +55,66 @@ let rec parse bs acc =
       parse tl (Unknown (kind,pkt) :: acc)
   | { _ } -> acc
 
-let marshal ts = 
+let marshal_bits ts = 
   let tlen = ref 0 in
   let opts = List.rev_map (function
     |MSS sz ->
        tlen := !tlen + 4;
-       (BITSTRING { 2:8; 4:8; sz:16 })
     |Window_size_shift shift ->
        tlen := !tlen + 3;
-       (BITSTRING { 3:8; 3:8; shift:8 })
     |SACK_ok ->
        tlen := !tlen + 2;
-       (BITSTRING { 4:8; 2:8 })
     |SACK acks ->
+       let len = List.length acks * 8 + 2 in
+       tlen := !tlen + len;
+    |Timestamp (tsval,tsecr) ->
+       tlen := !tlen + 10;
+    |Unknown (kind,contents) ->
+       let len = String.length contents + 2 in
+       tlen := !tlen + len;
+  ) ts in
+  match opts with 
+  |[] -> 0
+  |opts ->
+    let padlen = ((4 - (!tlen mod 4)) mod 4) * 8 in
+    (!tlen * 8) + padlen
+
+let marshal ts (bsbuf,bsoff,bslen) = 
+  let tlen = ref 0 in
+  let bs_off () = (bsbuf, (bsoff+(!tlen*8)), 0) in
+  List.iter (function
+    |MSS sz ->
+       let _ = BITSTRING { 2:8; 4:8; sz:16 } (bs_off ()) in
+       tlen := !tlen + 4;
+    |Window_size_shift shift ->
+       let _ = BITSTRING { 3:8; 3:8; shift:8 } (bs_off ()) in
+       tlen := !tlen + 3;
+    |SACK_ok ->
+       let _ = BITSTRING { 4:8; 2:8 } (bs_off ()) in
+       tlen := !tlen + 2;
+    |SACK acks ->
+       failwith "SACK unsupported for now\n"
+  (*
        let edges = Bitstring.concat (
          List.map (fun (le,re) -> BITSTRING { le:32; re:32 }) acks) in
        let len = List.length acks * 8 + 2 in
        tlen := !tlen + len;
        (BITSTRING { 5:8; len:8; edges:-1:bitstring })
+  *)
     |Timestamp (tsval,tsecr) ->
+       let _ = BITSTRING { 8:8; 10:8; tsval:32; tsecr:32 } (bs_off()) in
        tlen := !tlen + 10;
-       (BITSTRING { 8:8; 10:8; tsval:32; tsecr:32 })
     |Unknown (kind,contents) ->
        let len = String.length contents + 2 in
+       let _ = BITSTRING { kind:8; len:8; contents:-1:string } (bs_off ()) in
        tlen := !tlen + len;
-       (BITSTRING { kind:8; len:8; contents:-1:string })
-  ) ts in
-  match opts with 
-  |[] -> Bitstring.empty_bitstring
+  ) ts;
+  match !tlen with 
+  |0 -> ()
   |opts ->
     let padlen = ((4 - (!tlen mod 4)) mod 4) * 8 in
-    Bitstring.concat ( match padlen with
-                       | 0 -> opts
-                       | _ -> (List.rev ((BITSTRING { 0L:padlen }) :: opts)))
+    let _ = BITSTRING { 0L:padlen } (bs_off ()) in
+    ()
 
 let of_packet bs =
   parse bs []

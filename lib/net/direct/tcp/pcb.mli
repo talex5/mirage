@@ -41,6 +41,7 @@ val write_available: pcb -> int
 val write_wait_for: pcb -> int -> unit Lwt.t
 (* Write a segment *)
 val write: pcb -> Bitstring.t -> unit Lwt.t
+val get_writebuf : t -> pcb -> OS.Io_page.view Lwt.t
 (* Write a segment without using Nagle's algorithm*)
 val write_nodelay: pcb -> Bitstring.t -> unit Lwt.t
 
