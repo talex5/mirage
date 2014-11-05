@@ -351,6 +351,11 @@ type http
 val http: http typ
 val http_server: conduit_server -> conduit impl -> http impl
 
+(** {Tracing} *)
+
+type tracer
+val tracer: tracer typ
+val mprof_tracer : ?trace_id:string -> autostart:bool -> size:int -> unit -> tracer impl
 
 (** {2 Jobs} *)
 

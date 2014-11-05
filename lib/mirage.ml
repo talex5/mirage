@@ -1772,6 +1772,58 @@ let http_server_of_channel chan =
 let http_server mode conduit =
   impl http (`Stack (mode, conduit)) (module HTTP)
 
+module Tracer = struct
+  type t = {
+    size : int;
+    autostart : bool;
+    trace_id : string;
+  }
+
+  let name _ =
+    "tracer"
+
+  let module_name _ =
+    "MProf.Trace.Control"
+
+  let packages _ =
+    match !mode with
+    | `Unix -> ["mirage-profile"; "mirage-unix"]
+    | `Xen  -> ["mirage-profile"; "mirage-xen"]
+
+  let libraries _ =
+    match !mode with
+    | `Unix -> ["mirage-profile.unix"]
+    | `Xen  -> ["mirage-profile.xen"]
+
+  let configure t =
+    begin try
+      if Unix.((stat t.trace_id).st_kind <> S_DIR) then
+        failwith ("Not a directory: " ^ t.trace_id)
+    with _ ->
+      Unix.mkdir t.trace_id 0o755 end;
+    append_main "let trace_config =";
+    begin match !mode with
+    | `Unix -> append_main "  let buffer = MProf_unix.mmap_buffer ~size:%d %S in" t.size (t.trace_id / "ring_buffer");
+    | `Xen ->  append_main "  let buffer = MProf_xen.make_shared_buffer ~size:%d %S in" t.size t.trace_id;
+    end;
+    append_main "  MProf.Trace.Control.make buffer";
+    if t.autostart then
+      append_main "let () = MProf.Trace.Control.start trace_config";
+    append_main "let tracer () = return (`Ok trace_config)";
+    newline_main ()
+
+  let clean _ = ()
+
+  let update_path t _ = t
+end
+
+type tracer = Tracer
+
+let tracer = Type Tracer
+
+let mprof_tracer ?(trace_id="trace") ~autostart ~size () =
+  impl tracer Tracer.({autostart; size; trace_id}) (module Tracer)
+
 type job = JOB
 
 let job = Type JOB
