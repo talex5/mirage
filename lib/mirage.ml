@@ -1801,15 +1801,26 @@ module Tracer = struct
         failwith ("Not a directory: " ^ t.trace_id)
     with _ ->
       Unix.mkdir t.trace_id 0o755 end;
-    append_main "let trace_config =";
     begin match !mode with
-    | `Unix -> append_main "  let buffer = MProf_unix.mmap_buffer ~size:%d %S in" t.size (t.trace_id / "ring_buffer");
-    | `Xen ->  append_main "  let buffer = MProf_xen.make_shared_buffer ~size:%d %S in" t.size t.trace_id;
+    | `Unix ->
+        append_main "let trace_config =";
+        append_main "  let buffer = MProf_unix.mmap_buffer ~size:%d %S in" t.size (t.trace_id / "ring_buffer");
+        append_main "  MProf.Trace.Control.make buffer";
+    | `Xen ->
+        append_main "let trace_pages = MProf_xen.make_shared_buffer ~size:%d" t.size;
+        append_main "let trace_config =";
+        append_main "  let buffer = trace_pages |> Io_page.to_cstruct |> Cstruct.to_bigarray in";
+        append_main "  MProf.Trace.Control.make buffer";
     end;
-    append_main "  MProf.Trace.Control.make buffer";
     if t.autostart then
       append_main "let () = MProf.Trace.Control.start trace_config";
-    append_main "let tracer () = return (`Ok trace_config)";
+    append_main "let tracer () =";
+    begin match !mode with
+    | `Unix -> ()
+    | `Xen ->
+        append_main "  MProf_xen.share_with (module Gnt.Gntshr) (module OS.Xs) ~domid:0 trace_pages >>= fun () ->";
+    end;
+    append_main "  return (`Ok trace_config)";
     newline_main ()
 
   let clean _ = ()
