@@ -651,9 +651,6 @@ end
     receive and transmit network traffic. *)
 module type STACKV4 = sig
 
-  type console
-  (** The type for console logger. *)
-
   type netif
   (** The type for network interface that is used to transmit and
       receive traffic associated with this stack. *)
@@ -663,7 +660,7 @@ module type STACKV4 = sig
       These can consist of the IPv4 address binding, or a DHCP
       interface. *)
 
-  type ('console, 'netif, 'mode) config
+  type ('netif, 'mode) config
   (** The type for the collection of user configuration specified to
       construct a stack. *)
 
@@ -689,7 +686,6 @@ module type STACKV4 = sig
 
   include DEVICE with
     type error := error
-    and type id = (console, netif, mode) config
 
   module UDPV4: UDP
     with type +'a io = 'a io
