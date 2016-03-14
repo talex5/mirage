@@ -80,6 +80,17 @@ val default_clock: clock impl
 (** The default mirage-clock implementation. *)
 
 
+(** {2 Logging} *)
+
+val with_mirage_logs :
+  ?level:[`Error | `Warning | `Info | `Debug] ->
+  ?clock:clock impl ->
+  job impl ->
+  job impl
+(** [with_mirage_logs job] is a job that behaves like [job], but runs with
+    logging configured. Log messages are timestampted with [clock] and
+    the log level is initialised to [level] (default: [`Info]). *)
+
 
 (** {2 Random} *)
 
