@@ -36,10 +36,6 @@ module type DEVICE = sig
   type error
   (** The type for errors signalled by the device *)
 
-  type id
-  (** This type is no longer used and will be removed once other
-   * modules stop using it in their type signatures. *)
-
   val disconnect: t -> unit io
   (** Disconnect from the device.  While this might take some time to
       complete, it can never result in an error. *)
@@ -346,7 +342,6 @@ module type ETHIF = sig
 
   include DEVICE with
         type error := error
-    and type id    := netif
 
   val write: t -> buffer -> unit io
   (** [write nf buf] outputs [buf] to netfront [nf]. *)
@@ -382,8 +377,7 @@ module type IP = sig
   type prefix
   (** The type for IP prefixes. *)
 
-  include DEVICE with
-    type id := ethif
+  include DEVICE
 
   type callback = src:ipaddr -> dst:ipaddr -> buffer -> unit io
   (** An input continuation used by the parsing functions to pass on
@@ -537,8 +531,7 @@ module type UDP = sig
       conventional kernel, but a direct implementation will parse the
       buffer. *)
 
-  include DEVICE with
-    type id := ip
+  include DEVICE
 
   type callback = src:ipaddr -> dst:ipaddr -> src_port:int -> buffer -> unit io
   (** The type for callback functions that adds the UDP metadata for
@@ -592,7 +585,6 @@ module type TCP = sig
 
   include DEVICE with
       type error := error
-  and type id := ip
 
   include FLOW with
       type error  := error
